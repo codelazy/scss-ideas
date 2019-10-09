@@ -1,0 +1,260 @@
+// ----
+// libsass (v3.5.4)
+// ----
+
+/// Map deep get
+/// @author Hugo Giraudel
+/// @access public
+/// @param {Map} $map - Map
+/// @param {Arglist} $keys - Key chain
+/// @return {*} - Desired value
+@function map-deep-get($map, $keys...) {
+    @each $key in $keys {
+      $map: map-get($map, $key);
+    }
+    // @error $map map-get($map, a);
+    @return $map;
+}
+
+//MERGE FUNCTION of map1 to map2 and vice versa
+//This way, we can reuse the layout without rendering it twice and creating too many lines of CSS codes.
+@function recursive-map-merge($map1, $map2) {
+  @if ((type-of($map1) == map or type-of($map1) == list) and (type-of($map2) == map or type-of($map2) == list)) {
+    $result: $map1;
+    @each $key, $value in $map2 {
+      @if (type-of(map-get($result, $key)) == map and type-of($value) == map) {
+        @warn "The last key you specified is a map; it will be overrided with `#{$map2}`";
+        $result: map-merge($result, ($key: recursive-map-merge(map-get($result, $key), $value)));
+      }
+      @else {
+        $result: map-merge($result, ($key: $value));
+      }
+    }
+    @return $result;
+  }
+  @else {
+    @warn 'recursive-map-merge() expects it\'s parameters to be map types!';
+    @return null;
+  }
+}
+
+//PX to REM
+@function calculateRem($size) {
+  $remSize: $size / 14px;
+  @return #{$remSize}rem;
+}
+@mixin font-size($size) {
+  //Fallback in px
+  font-size: $size;
+  font-size: calculateRem($size);
+}
+
+//VENDOR PREFIX
+$vendor-prefixed: (
+  box-shadow,
+  border-radius,
+  opacity
+);
+@mixin vendor-prefixed($name, $argument, $not-mapping-set: true) {
+  -webkit-#{$name}: #{$argument};
+  -moz-#{$name}: #{$argument};
+  -ms-#{$name}: #{$argument};
+  -o-#{$name}: #{$argument};
+  @if $not-mapping-set == true {
+    #{$name}: #{$argument};
+  }
+}
+
+
+
+//COLOR PALLETES
+$cgg-colors: (
+  orange-1: #F58423,
+  orange-2: #e56035,
+  orange-3: #dc761f,
+  blue-1: #076B9C,
+  green-1: #77AA43,
+  white: #ffffff,
+  grey-4: #cccbc8,
+  grey-6: #e7e6e2,
+  black-1: #000,
+  default: #000
+);
+
+//COLOR FUNCTION
+@function color($key) {
+  @if map-has-key($cgg-colors, $key) {
+    @return map-get($cgg-colors, $key);
+  }
+  @warn "Unknown `#{$key}` in $cgg-colors.";
+  @return map-get($cgg-colors, default);
+}
+
+
+
+// breakpoints defined in settings
+$breakpoints: (200px, 767px, 1200px, 1400px);
+$breakpoint-aliases: (default, ipad, desktop, x-desktop);
+// mixin defined elsewhere and shouldn't be touched
+@mixin breakpoint($type, $fallback:false, $parent:true) {
+  $pos: index($breakpoint-aliases, $type);
+  $bp: nth($breakpoints, $pos);
+
+  @if $type == default {
+    @content;
+  } @else {
+    @media (min-width: $bp) {
+      @content;
+    }
+  }
+  @if $fallback {
+    @if $parent {
+      .#{$fallback} & {
+        @content;
+      }
+    } @else {
+      .#{$fallback} {
+        @content;
+      }
+    }
+  }
+}
+
+
+//default CTA layout
+//TODO
+$default-layout: (
+  default: (
+    normal: (
+      text-align: center
+      // width: inherit,
+      // padding: 15px,
+      // display: block,
+      // font-weight: 600,
+      // font-size: 32px,
+      // border-radius: 0,
+      // color: white,
+      // box-shadow: 0 none,
+      // text-decoration: none
+    ),
+    hover: (
+      font-size:32px,
+      display: inline-block
+    ),
+    disabled: (
+      opacity: 0
+    )
+  ),
+  ipad: (
+    normal: (
+      width: 50%,
+      display: block
+    ),
+    hover: (
+      width: 50%
+    )
+  )
+);
+
+//REUSE CHILD VALUES FOR PROPERTY DEEP NESTING
+@mixin property-key-checker($property-key-checker--value) {
+  @each $pseudo-key, $pseudo-value in $property-key-checker--value {
+    @if $pseudo-key == font-size {
+      @include font-size($pseudo-value);
+    } @else if index($vendor-prefixed, $pseudo-key) { //vendor prefix
+      @include vendor-prefixed(#{$pseudo-key}, $pseudo-value, $not-mapping-set: false);
+    } @else {
+      #{$pseudo-key}: $pseudo-value;
+    }
+  }
+}
+//HTML boolean attribute
+$boolean-attribute: (
+  disabled,
+  readonly
+);
+
+//Checker what SELECTOR it falls
+@mixin map-show-keys($map) {
+  @each $selector in map-keys($map) {
+    @if $selector == normal {
+      & {
+        @include property-key-checker(map-get($map, normal));
+      }
+    } @else if $selector == hover {
+      &:hover, &:focus, &:active {
+        @include property-key-checker(map-get($map, hover));
+      }
+    } @else {
+      &.#{$selector} {
+        @include property-key-checker(map-get($map, $selector));
+      }
+    }
+  }
+}
+
+
+//SETS of ARRAY and loop like inception. this way developers won't miss any browser compatibilities and ui layouts
+@mixin map-merge($map) {
+  @if $default-layout == null or  $default-layout == "" {
+    @error 'kindly create $default-layout for this to work.';
+  }
+  $map-merge: recursive-map-merge($default-layout, $map); //MERGE DEFAULT LAYOUT TO NEW LAYOUT
+  
+  @each $media-query-key, $selector-value in $map-merge {
+    @if map-has-keys($breakpoint-aliases, $media-query-key) { //Check if BREAKPOINTS is exists in our lists
+      @include breakpoint($media-query-key) { //BREAKPOINTS
+        @include map-show-keys($selector-value);
+      }
+    }
+  }
+}
+
+
+//EXAMPLE on how to use above code
+$layout-btn-primary: (
+  default: (
+    normal: (
+      text-align: left
+      // background-color: color(orange-1),
+      // box-shadow: inset 0 -4px 0 #ffe,
+      // border-radius: 3px,
+      // desktop: (
+      //   background-color: color(green-1),
+      //   width: 25%
+      // ),
+    ),
+    hover: (
+      display: block,
+      background-color: color(orange-3)
+    ),
+    // disabled: (
+    //   color: color(blue-1)
+    // )
+  ),
+  ipad: (
+    normal: (
+      //background-color: color(blue-1),
+      width: 100%
+    )
+  )
+);
+$layout-btn-secondary: (
+  default:(
+//     normal: (
+//       background-color: color(orange-1),
+//       color: color(white),
+//       width: 100%
+//     ),
+    hover: (
+      background-color: color(white)
+    )
+  )
+);
+
+.global-btn--primary {
+  @include map-merge($layout-btn-primary);
+}
+.global-btn--secondary {
+  @include map-merge($layout-btn-secondary);
+}
